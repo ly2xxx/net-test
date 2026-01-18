@@ -1,0 +1,5 @@
+# NetPull + Streamlit POC Requirements
+
+# Core dependencies
+streamlit>=1.45.0
+netpull>=0.1.0
