@@ -26,22 +26,33 @@ def ensure_playwright_browsers():
     try:
         # Install system dependencies is handled by packages.txt on Streamlit Cloud
         
-
-
-        # Install Firefox browser
-        print("Installing Firefox browser...")
+        # Install Firefox and Chromium browsers
+        print("Installing Playwright browsers (firefox, chromium)...")
         browser_result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "firefox"],
+            [sys.executable, "-m", "playwright", "install", "firefox", "chromium"],
             capture_output=True,
             text=True,
-            timeout=300
+            timeout=600 # Increased timeout for multiple browsers
         )
 
         if browser_result.returncode == 0:
-            print("✅ Playwright Firefox installed successfully")
+            print("✅ Playwright browsers installed successfully")
             return True
         else:
             print(f"⚠️ Browser installation failed: {browser_result.stderr}")
+            # Try installing just firefox as fallback
+            print("Trying fallback: installing only firefox...")
+            fallback_result = subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "firefox"],
+                capture_output=True,
+                text=True,
+                timeout=300
+            ) 
+            if fallback_result.returncode == 0:
+                 print("✅ Playwright Firefox installed successfully (fallback)")
+                 return True
+            
+            print(f"❌ Fallback installation failed: {fallback_result.stderr}")
             return False
 
     except subprocess.TimeoutExpired:

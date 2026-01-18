@@ -11,21 +11,35 @@ def install_playwright_browsers():
     print("Checking Playwright browser installation...")
 
     try:
-        # Only install Firefox since the app uses it by default
-        # Installing all browsers takes too long and uses too much disk space
+        # Install both Firefox and Chromium
+        print("Installing Firefox and Chromium...")
         result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "firefox"],
+            [sys.executable, "-m", "playwright", "install", "firefox", "chromium"],
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=600  # 10 minute timeout
         )
 
         if result.returncode == 0:
-            print("✅ Playwright Firefox browser installed successfully")
+            print("✅ Playwright browsers installed successfully")
             print(result.stdout)
         else:
             print(f"⚠️ Warning: Browser installation returned code {result.returncode}")
             print(result.stderr)
+            
+            # Fallback: try just firefox
+            print("Attempting fallback: installing only Firefox...")
+            fallback = subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "firefox"],
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+            
+            if fallback.returncode == 0:
+                print("✅ Playwright Firefox installed successfully (fallback)")
+            else:
+                print(f"❌ Fallback failed: {fallback.stderr}")
 
     except subprocess.TimeoutExpired:
         print("❌ Browser installation timed out")
