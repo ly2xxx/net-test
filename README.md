@@ -43,9 +43,10 @@ You can trigger automated extraction by passing parameters in the URL. This is u
 - `browser`: `firefox`, `chrome`, or `webkit` (default: `firefox`)
 - `headlessMode`: `true` or `false` (default: `true`)
 - `timeout`: Timeout in seconds (default: `30`)
+- `autoDownload`: `true` or `false` (default: `false`) - automatically downloads screenshot and HTML after extraction
 
 **Sample Call:**
-[http://localhost:8501/?url=https://example.com&browser=firefox&headlessMode=true&timeout=45](http://localhost:8501/?url=https://example.com&browser=firefox&headlessMode=true&timeout=45)
+[http://localhost:8501/?url=https://example.com&browser=firefox&headlessMode=true&timeout=45&autoDownload=true](http://localhost:8501/?url=https://example.com&browser=firefox&headlessMode=true&timeout=45&autoDownload=true)
 
 ## Features
 

@@ -6,6 +6,8 @@ import asyncio
 import sys
 import subprocess
 import os
+from pathlib import Path
+import json
 
 # Set event loop policy for Windows to avoid "NotImplementedError" with Playwright
 if sys.platform == 'win32':
@@ -13,8 +15,37 @@ if sys.platform == 'win32':
 
 print("🚀 Starting Streamlit App...")
 
-from pathlib import Path
-import json
+import base64
+
+def trigger_download(file_path: Path, file_name: str):
+    """Generates a link to download the given file and auto-clicks it."""
+    try:
+        if not file_path.exists():
+            st.warning(f"File not found for download: {file_name}")
+            return
+        
+        with open(file_path, "rb") as f:
+            data = f.read()
+            b64 = base64.b64encode(data).decode()
+            
+        md = f"""
+            <a href="data:file/octet-stream;base64,{b64}" download="{file_name}" id="download_link_{file_name}">Download {file_name}</a>
+            <script>
+                (function() {{
+                    var link = document.getElementById("download_link_{file_name}");
+                    if (link) {{
+                        link.click();
+                        console.log("Auto-clicked download for {file_name}");
+                    }}
+                }})();
+            </script>
+        """
+        st.components.v1.html(md, height=0, width=0)
+    except Exception as e:
+        print(f"Error triggering download for {file_name}: {e}")
+
+
+
 
 # Install Playwright browsers on first run (needed for Streamlit Cloud)
 @st.cache_resource
@@ -111,6 +142,7 @@ except ValueError:
 
 default_url = qp.get("url", "https://example.com")
 should_auto_extract = "url" in qp and "auto_extracted" not in st.session_state
+should_auto_download = "autoDownload" in qp and qp.get("autoDownload", "false").lower() == "true"
 
 # Browser selection
 browser_options = ["firefox", "chrome", "webkit"]
@@ -194,6 +226,12 @@ if manual_extract or should_auto_extract:
                 # Display results
                 if result.success:
                     st.success("✅ Extraction successful!")
+                    
+                    if should_auto_download:
+                        if result.screenshot_path and result.screenshot_path.exists():
+                            trigger_download(result.screenshot_path, result.screenshot_path.name)
+                        if result.html_path and result.html_path.exists():
+                            trigger_download(result.html_path, result.html_path.name)
 
                     # Create tabs for different outputs
                     tabs = []
