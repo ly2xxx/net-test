@@ -96,24 +96,41 @@ if sys.platform == 'linux':
 # Sidebar configuration
 st.sidebar.header("Configuration")
 
+# Parse query parameters for defaults
+qp = st.query_params
+default_browser = qp.get("browser", "firefox").lower()
+if default_browser not in ["firefox", "chrome", "webkit"]:
+    default_browser = "firefox"
+
+default_headless = qp.get("headlessMode", "true").lower() == "true"
+
+try:
+    default_timeout = int(qp.get("timeout", 30))
+except ValueError:
+    default_timeout = 30
+
+default_url = qp.get("url", "https://example.com")
+should_auto_extract = "url" in qp and "auto_extracted" not in st.session_state
+
 # Browser selection
+browser_options = ["firefox", "chrome", "webkit"]
 browser_type = st.sidebar.selectbox(
     "Browser",
-    options=["firefox", "chrome", "webkit"],
-    index=0
+    options=browser_options,
+    index=browser_options.index(default_browser)
 )
 
 # Headless mode
-headless = st.sidebar.checkbox("Headless Mode", value=True)
+headless = st.sidebar.checkbox("Headless Mode", value=default_headless)
 
 # Timeout
-timeout = st.sidebar.slider("Timeout (seconds)", min_value=10, max_value=60, value=30)
+timeout = st.sidebar.slider("Timeout (seconds)", min_value=10, max_value=60, value=default_timeout)
 
 # URL input
 st.header("Web Extraction Test")
 url = st.text_input(
     "Enter URL to extract",
-    value="https://example.com",
+    value=default_url,
     placeholder="https://example.com"
 )
 
@@ -134,7 +151,11 @@ with col3:
     extract_metadata = st.checkbox("Metadata", value=False)
 
 # Extract button
-if st.button("Extract Content", type="primary"):
+manual_extract = st.button("Extract Content", type="primary")
+
+if manual_extract or should_auto_extract:
+    if should_auto_extract:
+        st.session_state.auto_extracted = True
     if not url:
         st.warning("Please enter a URL")
     else:

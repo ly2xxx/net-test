@@ -34,6 +34,19 @@ streamlit run app.py
 
 The app will open in your default browser at `http://localhost:8501`
 
+## Automated Extraction via URL
+
+You can trigger automated extraction by passing parameters in the URL. This is useful for automated testing or integrating with other tools.
+
+**Supported Parameters:**
+- `url`: The target URL to extract (triggers auto-extraction)
+- `browser`: `firefox`, `chrome`, or `webkit` (default: `firefox`)
+- `headlessMode`: `true` or `false` (default: `true`)
+- `timeout`: Timeout in seconds (default: `30`)
+
+**Sample Call:**
+[http://localhost:8501/?url=https://example.com&browser=firefox&headlessMode=true&timeout=45](http://localhost:8501/?url=https://example.com&browser=firefox&headlessMode=true&timeout=45)
+
 ## Features
 
 ### Browser Configuration
