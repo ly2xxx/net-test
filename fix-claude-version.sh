@@ -102,6 +102,31 @@ detect_version_mismatch() {
     return 2
 }
 
+# Clean up temporary directories left by failed npm operations
+cleanup_temp_dirs() {
+    local path="$1"
+    local anthropic_dir="$path/lib/node_modules/@anthropic-ai"
+
+    if [ ! -d "$anthropic_dir" ]; then
+        return 0
+    fi
+
+    # Find and remove any .claude-code-* temporary directories
+    local temp_dirs=$(find "$anthropic_dir" -maxdepth 1 -type d -name ".claude-code-*" 2>/dev/null)
+
+    if [ -n "$temp_dirs" ]; then
+        log_info "Cleaning up temporary directories in $anthropic_dir..."
+        while IFS= read -r temp_dir; do
+            if [ -d "$temp_dir" ]; then
+                rm -rf "$temp_dir"
+                log_success "Removed temporary directory: $(basename "$temp_dir")"
+            fi
+        done <<< "$temp_dirs"
+    fi
+
+    return 0
+}
+
 # Remove old installations
 fix_version_mismatch() {
     local keep_path=""
@@ -149,10 +174,42 @@ fix_version_mismatch() {
     # Remove old installations
     for path in "${remove_paths[@]}"; do
         log_info "Removing installation at $path..."
-        if npm uninstall -g @anthropic-ai/claude-code --prefix "$path" 2>/dev/null; then
+
+        # Clean up any temporary directories first
+        cleanup_temp_dirs "$path"
+
+        # Manually remove package directory and symlink
+        local package_dir="$path/lib/node_modules/@anthropic-ai/claude-code"
+        local bin_link="$path/bin/claude"
+        local removal_failed=0
+
+        # Remove package directory
+        if [ -d "$package_dir" ]; then
+            if rm -rf "$package_dir" 2>/dev/null; then
+                log_info "Removed package directory: $package_dir"
+            else
+                log_error "Failed to remove package directory: $package_dir"
+                removal_failed=1
+            fi
+        fi
+
+        # Remove symlink
+        if [ -L "$bin_link" ] || [ -f "$bin_link" ]; then
+            if rm -f "$bin_link" 2>/dev/null; then
+                log_info "Removed symlink: $bin_link"
+            else
+                log_error "Failed to remove symlink: $bin_link"
+                removal_failed=1
+            fi
+        fi
+
+        # Try to remove parent @anthropic-ai directory if empty
+        rmdir "$path/lib/node_modules/@anthropic-ai" 2>/dev/null || true
+
+        if [ $removal_failed -eq 0 ]; then
             log_success "Removed installation from $path"
         else
-            log_error "Failed to remove installation from $path"
+            log_error "Failed to completely remove installation from $path"
         fi
     done
 
