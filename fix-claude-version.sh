@@ -3,8 +3,6 @@
 # fix-claude-version.sh - Fix Claude Code version mismatches
 # This script detects and resolves conflicts between multiple Claude Code installations
 
-set -e
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -66,13 +64,16 @@ detect_version_mismatch() {
         log_warning "Could not detect running version from executable"
     fi
 
-    # Find all npm installations
-    declare -A installations
+    # Find all npm installations (global scope for use in fix function)
+    declare -g -A installations
+
+    # Get home directory (handle cases where $HOME might not be set)
+    HOME_DIR="${HOME:-/home/user}"
 
     # Check common npm global locations
     NPM_GLOBAL_DIRS=(
-        "$HOME/.npm-global"
-        "$HOME/.nvm/versions/node/$(node -v 2>/dev/null)/lib"
+        "$HOME_DIR/.npm-global"
+        "$HOME_DIR/.nvm/versions/node/$(node -v 2>/dev/null)"
         "/usr/local"
     )
 
@@ -186,8 +187,11 @@ main() {
     echo "========================================="
     echo ""
 
+    # Detect version mismatch (disable exit on error temporarily)
+    set +e
     detect_version_mismatch
     result=$?
+    set -e
 
     if [ $result -eq 1 ]; then
         log_error "Could not properly detect installations"
@@ -203,7 +207,15 @@ main() {
     echo "========================================="
     echo ""
 
+    set +e
     fix_version_mismatch
+    fix_result=$?
+    set -e
+
+    if [ $fix_result -ne 0 ]; then
+        log_warning "Fix operation was cancelled or failed"
+        exit 1
+    fi
 
     echo ""
     echo "========================================="
