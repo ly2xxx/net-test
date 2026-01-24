@@ -1,5 +1,8 @@
 # NetPull + Streamlit POC
 
+![Main Interface](assets/main_interface.png)
+
+
 This POC (Proof of Concept) application tests the compatibility of **netpull** (Playwright-based web scraping) with **Streamlit**.
 
 ## Purpose
@@ -56,6 +59,9 @@ You can trigger automated extraction by passing parameters in the URL. This is u
 - Adjust timeout settings
 
 ### Extraction Options
+
+![Extraction Options](assets/extraction_options.png)
+
 - **Screenshot**: Capture full-page screenshot
 - **HTML**: Extract and clean HTML content
 - **Structured Data**: Extract title, headings, paragraphs, and links
@@ -65,6 +71,11 @@ You can trigger automated extraction by passing parameters in the URL. This is u
 - **Metadata**: Extract OpenGraph and Twitter Card metadata
 
 ### Results Display
+
+![Extraction Results](assets/extraction_results.png)
+
+![Structured Data](assets/structured_data.png)
+
 - Interactive tabs showing different extraction outputs
 - Screenshot preview
 - HTML viewer with download option
