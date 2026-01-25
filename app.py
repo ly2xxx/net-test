@@ -8,6 +8,7 @@ import subprocess
 import os
 from pathlib import Path
 import json
+import urllib.parse
 
 # Set event loop policy for Windows to avoid "NotImplementedError" with Playwright
 if sys.platform == 'win32':
@@ -45,6 +46,78 @@ def trigger_download(file_path: Path, file_name: str):
         print(f"Error triggering download for {file_name}: {e}")
 
 
+# =============================================================================
+# QR-Greeting Integration
+# =============================================================================
+
+def build_qr_greeting_url(
+    source_url: str,
+    title: str = "",
+    summary: str = "",
+    theme: str = "lights"
+) -> str:
+    """
+    Build a URL to QR-Greeting app with pre-filled content from extraction.
+
+    Args:
+        source_url: The original URL that was scraped
+        title: Extracted page title
+        summary: Brief content summary (first ~300 chars of structured data)
+        theme: QR-Greeting theme (lights, fireworks, snowflake, etc.)
+
+    Returns:
+        Full URL to qr-greeting.streamlit.app with query parameters
+    """
+    message_parts = []
+
+    if title:
+        message_parts.append(f"📰 {title}")
+        message_parts.append("")
+
+    if summary:
+        truncated = summary[:300] + "..." if len(summary) > 300 else summary
+        message_parts.append(truncated)
+        message_parts.append("")
+
+    message_parts.append(f"🔗 {source_url}")
+
+    params = {
+        "tab": "create",
+        "from": "Shared via NetPull",
+        "to": "Friend",
+        "message": "\n".join(message_parts),
+        "url": source_url,
+        "theme": theme
+    }
+
+    base_url = "https://qr-greeting.streamlit.app/"
+    return f"{base_url}?{urllib.parse.urlencode(params)}"
+
+
+def detect_theme_from_url(url: str) -> str:
+    """
+    Auto-detect appropriate QR-Greeting theme based on URL domain.
+
+    Args:
+        url: The source URL
+
+    Returns:
+        Theme name string
+    """
+    url_lower = url.lower()
+
+    if any(d in url_lower for d in ['youtube', 'vimeo', 'tiktok', 'video']):
+        return "fireworks"
+    elif any(d in url_lower for d in ['news', 'bbc', 'cnn', 'nytimes']):
+        return "lights"
+    elif any(d in url_lower for d in ['amazon', 'ebay', 'shop', 'etsy']):
+        return "confetti"
+    elif any(d in url_lower for d in ['github', 'gitlab', 'stackoverflow']):
+        return "stars"
+    elif any(d in url_lower for d in ['linkedin', 'twitter', 'facebook']):
+        return "champagne"
+    else:
+        return "lights"
 
 
 # Install Playwright browsers on first run (needed for Streamlit Cloud)
@@ -324,6 +397,68 @@ if manual_extract or should_auto_extract:
                                 st.subheader("Metadata")
                                 st.json(result.metadata)
                             tab_index += 1
+
+                    # =================================================
+                    # QR-Greeting Integration Section
+                    # =================================================
+                    st.markdown("---")
+                    st.subheader("🎁 Share as QR Greeting")
+
+                    # Extract content for QR
+                    qr_title = ""
+                    qr_summary = ""
+
+                    if result.structured_data:
+                        qr_title = result.structured_data.get('title', '')
+                        paragraphs = result.structured_data.get('paragraphs', [])
+                        if paragraphs and len(paragraphs) > 0:
+                            qr_summary = paragraphs[0] if paragraphs[0] else ""
+
+                    # Auto-detect theme with option to override
+                    auto_theme = detect_theme_from_url(url)
+                    theme_options = ["lights", "fireworks", "snowflake", "stars",
+                                     "confetti", "champagne", "hearts"]
+
+                    qr_col1, qr_col2 = st.columns([3, 1])
+
+                    with qr_col1:
+                        st.write("📤 Transform this page into a shareable QR greeting!")
+
+                    with qr_col2:
+                        selected_theme = st.selectbox(
+                            "Theme",
+                            options=theme_options,
+                            index=theme_options.index(auto_theme) if auto_theme in theme_options else 0,
+                            key="qr_theme_selector",
+                            label_visibility="collapsed"
+                        )
+
+                    # Build QR-Greeting URL
+                    qr_greeting_url = build_qr_greeting_url(
+                        source_url=url,
+                        title=qr_title,
+                        summary=qr_summary,
+                        theme=selected_theme
+                    )
+
+                    btn_col1, btn_col2 = st.columns(2)
+
+                    with btn_col1:
+                        st.link_button(
+                            "🎁 Create QR Greeting →",
+                            url=qr_greeting_url,
+                            type="primary",
+                            use_container_width=True
+                        )
+
+                    with btn_col2:
+                        if st.button("📋 Copy Greeting Link",
+                                     use_container_width=True,
+                                     key="copy_qr_greeting_link"):
+                            st.code(qr_greeting_url, language=None)
+
+                    st.caption("💡 Opens QR-Greeting with pre-filled content from this page")
+                    st.markdown("---")
 
                     # Result summary
                     with st.expander("View Full Result Object"):
