@@ -275,13 +275,59 @@ headless = st.sidebar.checkbox("Headless Mode", value=default_headless)
 # Timeout
 timeout = st.sidebar.slider("Timeout (seconds)", min_value=10, max_value=60, value=default_timeout)
 
-# URL input
-st.header("Web Extraction Test")
-url = st.text_input(
-    "Enter URL to extract",
-    value=default_url,
-    placeholder="https://example.com"
+# Input method selection (Local Directory promoted first, File Upload at bottom)
+input_method_options = ["URL", "Local Directory", "File Upload"]
+input_method = st.sidebar.selectbox(
+    "Input Method",
+    options=input_method_options,
+    index=0
 )
+
+# Main content area
+st.header("Web Extraction Test")
+
+# Initialize variables
+url = None
+uploaded_file = None
+local_dir_path = None
+
+if input_method == "URL":
+    url = st.text_input(
+        "Enter URL to extract",
+        value=default_url,
+        placeholder="https://example.com"
+    )
+elif input_method == "Local Directory":
+    local_dir_path = st.text_input(
+        "Enter local directory path",
+        value="",
+        placeholder="/path/to/your/files"
+    )
+    if local_dir_path:
+        dir_path = Path(local_dir_path)
+        if dir_path.exists() and dir_path.is_dir():
+            # List files in directory
+            files = list(dir_path.glob("*"))
+            if files:
+                st.info(f"Found {len(files)} files in directory")
+                with st.expander("View files"):
+                    for f in files[:20]:  # Show first 20 files
+                        st.write(f"- {f.name}")
+                    if len(files) > 20:
+                        st.write(f"... and {len(files) - 20} more files")
+            else:
+                st.warning("No files found in directory")
+        elif local_dir_path:
+            st.error("Directory not found or invalid path")
+elif input_method == "File Upload":
+    # Allowed file types: .pdf, .md, .txt
+    uploaded_file = st.file_uploader(
+        "Upload a file",
+        type=["pdf", "md", "txt"],
+        help="Supported formats: PDF, Markdown, and Text files"
+    )
+    if uploaded_file:
+        st.success(f"Uploaded: {uploaded_file.name} ({uploaded_file.size} bytes)")
 
 # Extraction options
 st.subheader("Extraction Options")
@@ -305,215 +351,321 @@ manual_extract = st.button("Extract Content", type="primary")
 if manual_extract or should_auto_extract:
     if should_auto_extract:
         st.session_state.auto_extracted = True
-    if not url:
-        st.warning("Please enter a URL")
-    else:
+
+    # Validate input based on method
+    has_valid_input = False
+    if input_method == "URL":
+        has_valid_input = bool(url)
+        if not has_valid_input:
+            st.warning("Please enter a URL")
+    elif input_method == "Local Directory":
+        has_valid_input = bool(local_dir_path) and Path(local_dir_path).exists()
+        if not has_valid_input:
+            st.warning("Please enter a valid directory path")
+    elif input_method == "File Upload":
+        has_valid_input = uploaded_file is not None
+        if not has_valid_input:
+            st.warning("Please upload a file")
+
+    if has_valid_input:
         # Create output directory
         output_dir = Path("./poc_output")
         output_dir.mkdir(exist_ok=True)
 
-        # Configure browser
-        browser_config = BrowserConfig(
-            browser_type=browser_type,
-            headless=headless,
-            timeout=timeout * 1000  # Convert to milliseconds
-        )
+        # Handle different input methods
+        if input_method == "File Upload":
+            # Process uploaded file
+            with st.spinner(f"Processing uploaded file: {uploaded_file.name}..."):
+                try:
+                    # Save uploaded file
+                    file_path = output_dir / uploaded_file.name
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
 
-        # Configure extraction
-        extraction_config = ExtractionConfig(
-            output_dir=output_dir,
-            extract_screenshot=extract_screenshot,
-            extract_html=extract_html,
-            extract_images=extract_images,
-            extract_tables=extract_tables,
-            extract_forms=extract_forms,
-            extract_metadata=extract_metadata
-        )
+                    # Read file content based on type
+                    file_ext = Path(uploaded_file.name).suffix.lower()
+                    content = ""
 
-        # Progress indicator
-        with st.spinner(f"Extracting content from {url}..."):
-            try:
-                # Extract webpage
-                result = extract_webpage(
-                    url=url,
-                    extraction_config=extraction_config,
-                    browser_config=browser_config
-                )
+                    if file_ext == ".txt":
+                        content = uploaded_file.getvalue().decode("utf-8")
+                    elif file_ext == ".md":
+                        content = uploaded_file.getvalue().decode("utf-8")
+                    elif file_ext == ".pdf":
+                        # For PDF, we just show file info (full parsing would need additional libs)
+                        content = f"[PDF File: {uploaded_file.name}, Size: {uploaded_file.size} bytes]"
 
-                # Display results
-                if result.success:
-                    st.success("✅ Extraction successful!")
-                    
-                    if should_auto_download:
-                        if result.screenshot_path and result.screenshot_path.exists():
-                            trigger_download(result.screenshot_path, result.screenshot_path.name)
-                        if result.html_path and result.html_path.exists():
-                            trigger_download(result.html_path, result.html_path.name)
+                    st.success(f"File processed successfully: {uploaded_file.name}")
 
-                    # Create tabs for different outputs
-                    tabs = []
-                    tab_names = []
-
-                    if result.screenshot_path:
-                        tab_names.append("Screenshot")
-                    if result.html_path:
-                        tab_names.append("HTML")
-                    if result.structured_data:
-                        tab_names.append("Structured Data")
-                    if result.images:
-                        tab_names.append("Images")
-                    if result.tables:
-                        tab_names.append("Tables")
-                    if result.forms:
-                        tab_names.append("Forms")
-                    if result.metadata:
-                        tab_names.append("Metadata")
-
-                    if tab_names:
-                        tabs = st.tabs(tab_names)
-                        tab_index = 0
-
-                        # Screenshot tab
-                        if result.screenshot_path:
-                            with tabs[tab_index]:
-                                st.subheader("Screenshot")
-                                if result.screenshot_path.exists():
-                                    st.image(str(result.screenshot_path), use_container_width=True)
-                                    st.caption(f"Saved to: {result.screenshot_path}")
-                                else:
-                                    st.error(f"Screenshot file not found: {result.screenshot_path}")
-                            tab_index += 1
-
-                        # HTML tab
-                        if result.html_path:
-                            with tabs[tab_index]:
-                                st.subheader("HTML Content")
-                                if result.html_path.exists():
-                                    with open(result.html_path, 'r', encoding='utf-8') as f:
-                                        html_content = f.read()
-                                    st.code(html_content[:5000], language="html")  # Show first 5000 chars
-                                    if len(html_content) > 5000:
-                                        st.info(f"Showing first 5000 characters. Total: {len(html_content)} characters")
-                                    st.caption(f"Saved to: {result.html_path}")
-
-                                    # Download button
-                                    st.download_button(
-                                        label="Download HTML",
-                                        data=html_content,
-                                        file_name=result.html_path.name,
-                                        mime="text/html"
-                                    )
-                                else:
-                                    st.error(f"HTML file not found: {result.html_path}")
-                            tab_index += 1
-
-                        # Structured data tab
-                        if result.structured_data:
-                            with tabs[tab_index]:
-                                st.subheader("Structured Data")
-                                st.json(result.structured_data)
-                            tab_index += 1
-
-                        # Images tab
-                        if result.images:
-                            with tabs[tab_index]:
-                                st.subheader(f"Images ({len(result.images)})")
-                                st.json(result.images)
-                            tab_index += 1
-
-                        # Tables tab
-                        if result.tables:
-                            with tabs[tab_index]:
-                                st.subheader(f"Tables ({len(result.tables)})")
-                                st.json(result.tables)
-                            tab_index += 1
-
-                        # Forms tab
-                        if result.forms:
-                            with tabs[tab_index]:
-                                st.subheader(f"Forms ({len(result.forms)})")
-                                st.json(result.forms)
-                            tab_index += 1
-
-                        # Metadata tab
-                        if result.metadata:
-                            with tabs[tab_index]:
-                                st.subheader("Metadata")
-                                st.json(result.metadata)
-                            tab_index += 1
-
-                    # =================================================
-                    # QR-Greeting Integration Section
-                    # =================================================
-                    st.markdown("---")
-                    st.subheader("🎁 Share as QR Greeting")
-
-                    # Extract content for QR
-                    qr_title = ""
-                    qr_summary = ""
-
-                    if result.structured_data:
-                        qr_title = result.structured_data.get('title', '')
-                        paragraphs = result.structured_data.get('paragraphs', [])
-                        if paragraphs and len(paragraphs) > 0:
-                            qr_summary = paragraphs[0] if paragraphs[0] else ""
-
-                    # Auto-detect theme with option to override
-                    auto_theme = detect_theme_from_url(url)
-                    theme_options = ["lights", "fireworks", "snowflake", "stars",
-                                     "confetti", "champagne", "hearts"]
-
-                    qr_col1, qr_col2 = st.columns([3, 1])
-
-                    with qr_col1:
-                        st.write("📤 Transform this page into a shareable QR greeting!")
-
-                    with qr_col2:
-                        selected_theme = st.selectbox(
-                            "Theme",
-                            options=theme_options,
-                            index=theme_options.index(auto_theme) if auto_theme in theme_options else 0,
-                            key="qr_theme_selector",
-                            label_visibility="collapsed"
+                    # Display file content
+                    st.subheader("File Content")
+                    if file_ext == ".md":
+                        st.markdown(content)
+                    elif file_ext == ".pdf":
+                        st.info(content)
+                        st.download_button(
+                            label="Download PDF",
+                            data=uploaded_file.getvalue(),
+                            file_name=uploaded_file.name,
+                            mime="application/pdf"
                         )
+                    else:
+                        st.text_area("Content", content, height=400)
 
-                    # Build QR-Greeting URL
-                    qr_greeting_url = build_qr_greeting_url(
-                        source_url=url,
-                        title=qr_title,
-                        summary=qr_summary,
-                        theme=selected_theme
+                    # Show file metadata
+                    with st.expander("File Information"):
+                        st.json({
+                            "filename": uploaded_file.name,
+                            "size_bytes": uploaded_file.size,
+                            "type": file_ext,
+                            "saved_to": str(file_path)
+                        })
+
+                except Exception as e:
+                    st.error(f"Error processing file: {str(e)}")
+                    st.exception(e)
+
+        elif input_method == "Local Directory":
+            # Process local directory
+            with st.spinner(f"Processing directory: {local_dir_path}..."):
+                try:
+                    dir_path = Path(local_dir_path)
+                    supported_extensions = [".pdf", ".md", ".txt"]
+                    files = [f for f in dir_path.iterdir() if f.is_file() and f.suffix.lower() in supported_extensions]
+
+                    if not files:
+                        st.warning("No supported files (.pdf, .md, .txt) found in directory")
+                    else:
+                        st.success(f"Found {len(files)} supported files")
+
+                        for file_path in files:
+                            with st.expander(f"📄 {file_path.name}"):
+                                file_ext = file_path.suffix.lower()
+                                if file_ext == ".txt" or file_ext == ".md":
+                                    with open(file_path, "r", encoding="utf-8") as f:
+                                        content = f.read()
+                                    if file_ext == ".md":
+                                        st.markdown(content)
+                                    else:
+                                        st.text_area("Content", content, height=200, key=f"content_{file_path.name}")
+                                elif file_ext == ".pdf":
+                                    st.info(f"PDF File: {file_path.name} ({file_path.stat().st_size} bytes)")
+                                    with open(file_path, "rb") as f:
+                                        st.download_button(
+                                            label="Download PDF",
+                                            data=f.read(),
+                                            file_name=file_path.name,
+                                            mime="application/pdf",
+                                            key=f"download_{file_path.name}"
+                                        )
+
+                except Exception as e:
+                    st.error(f"Error processing directory: {str(e)}")
+                    st.exception(e)
+
+        else:
+            # URL mode - original extraction logic
+            # Configure browser
+            browser_config = BrowserConfig(
+                browser_type=browser_type,
+                headless=headless,
+                timeout=timeout * 1000  # Convert to milliseconds
+            )
+
+            # Configure extraction
+            extraction_config = ExtractionConfig(
+                output_dir=output_dir,
+                extract_screenshot=extract_screenshot,
+                extract_html=extract_html,
+                extract_images=extract_images,
+                extract_tables=extract_tables,
+                extract_forms=extract_forms,
+                extract_metadata=extract_metadata
+            )
+
+            # Progress indicator
+            with st.spinner(f"Extracting content from {url}..."):
+                try:
+                    # Extract webpage
+                    result = extract_webpage(
+                        url=url,
+                        extraction_config=extraction_config,
+                        browser_config=browser_config
                     )
 
-                    btn_col1, btn_col2 = st.columns(2)
+                    # Display results
+                    if result.success:
+                        st.success("✅ Extraction successful!")
 
-                    with btn_col1:
-                        st.link_button(
-                            "🎁 Create QR Greeting →",
-                            url=qr_greeting_url,
-                            type="primary",
-                            use_container_width=True
+                        if should_auto_download:
+                            if result.screenshot_path and result.screenshot_path.exists():
+                                trigger_download(result.screenshot_path, result.screenshot_path.name)
+                            if result.html_path and result.html_path.exists():
+                                trigger_download(result.html_path, result.html_path.name)
+
+                        # Create tabs for different outputs
+                        tabs = []
+                        tab_names = []
+
+                        if result.screenshot_path:
+                            tab_names.append("Screenshot")
+                        if result.html_path:
+                            tab_names.append("HTML")
+                        if result.structured_data:
+                            tab_names.append("Structured Data")
+                        if result.images:
+                            tab_names.append("Images")
+                        if result.tables:
+                            tab_names.append("Tables")
+                        if result.forms:
+                            tab_names.append("Forms")
+                        if result.metadata:
+                            tab_names.append("Metadata")
+
+                        if tab_names:
+                            tabs = st.tabs(tab_names)
+                            tab_index = 0
+
+                            # Screenshot tab
+                            if result.screenshot_path:
+                                with tabs[tab_index]:
+                                    st.subheader("Screenshot")
+                                    if result.screenshot_path.exists():
+                                        st.image(str(result.screenshot_path), use_container_width=True)
+                                        st.caption(f"Saved to: {result.screenshot_path}")
+                                    else:
+                                        st.error(f"Screenshot file not found: {result.screenshot_path}")
+                                tab_index += 1
+
+                            # HTML tab
+                            if result.html_path:
+                                with tabs[tab_index]:
+                                    st.subheader("HTML Content")
+                                    if result.html_path.exists():
+                                        with open(result.html_path, 'r', encoding='utf-8') as f:
+                                            html_content = f.read()
+                                        st.code(html_content[:5000], language="html")  # Show first 5000 chars
+                                        if len(html_content) > 5000:
+                                            st.info(f"Showing first 5000 characters. Total: {len(html_content)} characters")
+                                        st.caption(f"Saved to: {result.html_path}")
+
+                                        # Download button
+                                        st.download_button(
+                                            label="Download HTML",
+                                            data=html_content,
+                                            file_name=result.html_path.name,
+                                            mime="text/html"
+                                        )
+                                    else:
+                                        st.error(f"HTML file not found: {result.html_path}")
+                                tab_index += 1
+
+                            # Structured data tab
+                            if result.structured_data:
+                                with tabs[tab_index]:
+                                    st.subheader("Structured Data")
+                                    st.json(result.structured_data)
+                                tab_index += 1
+
+                            # Images tab
+                            if result.images:
+                                with tabs[tab_index]:
+                                    st.subheader(f"Images ({len(result.images)})")
+                                    st.json(result.images)
+                                tab_index += 1
+
+                            # Tables tab
+                            if result.tables:
+                                with tabs[tab_index]:
+                                    st.subheader(f"Tables ({len(result.tables)})")
+                                    st.json(result.tables)
+                                tab_index += 1
+
+                            # Forms tab
+                            if result.forms:
+                                with tabs[tab_index]:
+                                    st.subheader(f"Forms ({len(result.forms)})")
+                                    st.json(result.forms)
+                                tab_index += 1
+
+                            # Metadata tab
+                            if result.metadata:
+                                with tabs[tab_index]:
+                                    st.subheader("Metadata")
+                                    st.json(result.metadata)
+                                tab_index += 1
+
+                        # =================================================
+                        # QR-Greeting Integration Section
+                        # =================================================
+                        st.markdown("---")
+                        st.subheader("🎁 Share as QR Greeting")
+
+                        # Extract content for QR
+                        qr_title = ""
+                        qr_summary = ""
+
+                        if result.structured_data:
+                            qr_title = result.structured_data.get('title', '')
+                            paragraphs = result.structured_data.get('paragraphs', [])
+                            if paragraphs and len(paragraphs) > 0:
+                                qr_summary = paragraphs[0] if paragraphs[0] else ""
+
+                        # Auto-detect theme with option to override
+                        auto_theme = detect_theme_from_url(url)
+                        theme_options = ["lights", "fireworks", "snowflake", "stars",
+                                         "confetti", "champagne", "hearts"]
+
+                        qr_col1, qr_col2 = st.columns([3, 1])
+
+                        with qr_col1:
+                            st.write("📤 Transform this page into a shareable QR greeting!")
+
+                        with qr_col2:
+                            selected_theme = st.selectbox(
+                                "Theme",
+                                options=theme_options,
+                                index=theme_options.index(auto_theme) if auto_theme in theme_options else 0,
+                                key="qr_theme_selector",
+                                label_visibility="collapsed"
+                            )
+
+                        # Build QR-Greeting URL
+                        qr_greeting_url = build_qr_greeting_url(
+                            source_url=url,
+                            title=qr_title,
+                            summary=qr_summary,
+                            theme=selected_theme
                         )
 
-                    with btn_col2:
-                        if st.button("📋 Copy Greeting Link",
-                                     use_container_width=True,
-                                     key="copy_qr_greeting_link"):
-                            st.code(qr_greeting_url, language=None)
+                        btn_col1, btn_col2 = st.columns(2)
 
-                    st.caption("💡 Opens QR-Greeting with pre-filled content from this page")
-                    st.markdown("---")
+                        with btn_col1:
+                            st.link_button(
+                                "🎁 Create QR Greeting →",
+                                url=qr_greeting_url,
+                                type="primary",
+                                use_container_width=True
+                            )
 
-                    # Result summary
-                    with st.expander("View Full Result Object"):
-                        st.json(result.to_dict())
+                        with btn_col2:
+                            if st.button("📋 Copy Greeting Link",
+                                         use_container_width=True,
+                                         key="copy_qr_greeting_link"):
+                                st.code(qr_greeting_url, language=None)
 
-                else:
-                    st.error(f"❌ Extraction failed: {result.error}")
+                        st.caption("💡 Opens QR-Greeting with pre-filled content from this page")
+                        st.markdown("---")
 
-            except Exception as e:
-                st.error(f"❌ Error during extraction: {str(e)}")
-                st.exception(e)
+                        # Result summary
+                        with st.expander("View Full Result Object"):
+                            st.json(result.to_dict())
+
+                    else:
+                        st.error(f"❌ Extraction failed: {result.error}")
+
+                except Exception as e:
+                    st.error(f"❌ Error during extraction: {str(e)}")
+                    st.exception(e)
 
 # System info
 with st.expander("System Information"):
