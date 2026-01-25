@@ -9,6 +9,9 @@ import os
 from pathlib import Path
 import json
 import urllib.parse
+import threading
+import time
+from datetime import datetime
 
 # Set event loop policy for Windows to avoid "NotImplementedError" with Playwright
 if sys.platform == 'win32':
@@ -120,6 +123,44 @@ def detect_theme_from_url(url: str) -> str:
         return "lights"
 
 
+# =============================================================================
+# QR-Greeting Keepalive Daemon
+# =============================================================================
+
+def _keepalive_daemon():
+    """
+    Daemon thread that pings qr-greeting.streamlit.app every 30 minutes
+    to keep the service online (prevents Streamlit Cloud from sleeping).
+    """
+    import requests
+
+    QR_GREETING_URL = "https://qr-greeting.streamlit.app/"
+    PING_INTERVAL = 30 * 60  # 30 minutes in seconds
+
+    while True:
+        try:
+            response = requests.get(QR_GREETING_URL, timeout=30)
+            print(f"[{datetime.now().isoformat()}] Keepalive ping to qr-greeting: Status {response.status_code}")
+        except requests.exceptions.Timeout:
+            print(f"[{datetime.now().isoformat()}] Keepalive ping timeout (service may be waking up)")
+        except Exception as e:
+            print(f"[{datetime.now().isoformat()}] Keepalive ping failed: {e}")
+
+        time.sleep(PING_INTERVAL)
+
+
+@st.cache_resource
+def start_keepalive_daemon():
+    """
+    Start the keepalive daemon thread (runs once due to cache_resource).
+    The daemon pings qr-greeting.streamlit.app every 30 minutes.
+    """
+    thread = threading.Thread(target=_keepalive_daemon, daemon=True, name="qr-greeting-keepalive")
+    thread.start()
+    print(f"[{datetime.now().isoformat()}] Keepalive daemon started for qr-greeting.streamlit.app")
+    return thread
+
+
 # Install Playwright browsers on first run (needed for Streamlit Cloud)
 @st.cache_resource
 def ensure_playwright_browsers():
@@ -174,6 +215,9 @@ except ImportError:
     NETPULL_AVAILABLE = False
 
 st.set_page_config(page_title="NetPull + Streamlit POC", layout="wide")
+
+# Start keepalive daemon for qr-greeting service
+start_keepalive_daemon()
 
 st.title("NetPull + Streamlit Compatibility Test")
 st.markdown("Testing if Playwright (via netpull) works within Streamlit environment")
