@@ -188,20 +188,36 @@ def extract_video_from_page(structured_data: dict, metadata: dict) -> str:
     
     Checks:
     1. OpenGraph video meta tag
-    2. YouTube embeds in page
-    3. Vimeo embeds in page
-    4. Direct video URLs in content
+    2. Twitter video meta tag
+    3. Schema.org video URL
+    4. YouTube/Vimeo embed URLs
     """
     video_url = ""
     
-    # Check metadata for og:video
+    # Check metadata for various video meta tags
     if metadata:
-        video_url = metadata.get('og:video', '') or metadata.get('og:video:url', '')
+        # OpenGraph video
+        video_url = metadata.get('og:video', '') or metadata.get('og:video:url', '') or \
+                   metadata.get('og:video:secure_url', '')
+        if video_url:
+            return video_url
+        
+        # Twitter video
+        video_url = metadata.get('twitter:player', '') or metadata.get('twitter:player:stream', '')
         if video_url:
             return video_url
     
-    # TODO: Check for YouTube/Vimeo embeds in structured_data
-    # (This would require NetPull to extract iframe src attributes)
+    # Check structured data for video URLs
+    if structured_data:
+        # YouTube URLs in text content
+        if 'paragraphs' in structured_data:
+            for para in structured_data.get('paragraphs', []):
+                if 'youtube.com/watch' in para or 'youtu.be/' in para:
+                    # Try to extract the URL
+                    import re
+                    youtube_match = re.search(r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[\w-]+)', para)
+                    if youtube_match:
+                        return youtube_match.group(1)
     
     return video_url
 
@@ -211,15 +227,37 @@ def extract_price_from_page(structured_data: dict, metadata: dict) -> str:
     Try to find product price from extracted page data.
     
     Checks:
-    1. Schema.org price
-    2. og:price:amount
+    1. OpenGraph/Product meta tags
+    2. Schema.org structured data
     3. Common price patterns in content
     """
+    import re
+    
+    # Check metadata for price
     if metadata:
-        price = metadata.get('og:price:amount', '') or metadata.get('product:price:amount', '')
-        currency = metadata.get('og:price:currency', '') or metadata.get('product:price:currency', 'USD')
+        price = metadata.get('og:price:amount', '') or \
+               metadata.get('product:price:amount', '') or \
+               metadata.get('twitter:data1', '') if 'price' in metadata.get('twitter:label1', '').lower() else ''
+        currency = metadata.get('og:price:currency', '') or \
+                  metadata.get('product:price:currency', '') or 'USD'
         if price:
-            return f"{currency} {price}"
+            try:
+                # Clean and format price
+                price_clean = re.sub(r'[^\d.]', '', str(price))
+                if price_clean:
+                    return f"{currency} {price_clean}"
+            except:
+                pass
+    
+    # Check structured data for common price patterns
+    if structured_data:
+        # Look in paragraphs for price patterns like $19.99, £49, €99.00
+        if 'paragraphs' in structured_data:
+            for para in structured_data.get('paragraphs', []):
+                # Match common price formats
+                price_match = re.search(r'([\$£€]\s?[\d,]+\.?\d*|\d+[\.,]\d{2}\s?(?:USD|GBP|EUR|dollars?|pounds?))', para, re.IGNORECASE)
+                if price_match:
+                    return price_match.group(1)
     
     return ""
 
@@ -400,6 +438,11 @@ with col3:
     extract_forms = st.checkbox("Forms", value=False)
     extract_metadata = st.checkbox("Metadata", value=False)
 
+# Marketing Funnel toggle
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎯 Output Options")
+enable_funnel = st.sidebar.checkbox("📈 Marketing Funnel QR", value=False, help="Enable marketing funnel QR code generator after extraction")
+
 # Extract button
 manual_extract = st.button("Extract Content", type="primary")
 
@@ -544,99 +587,118 @@ if manual_extract or should_auto_extract:
                             tab_index += 1
 
                     # =================================================
-                    # Marketing Funnel QR Builder Section
+                    # Marketing Funnel QR Builder Section (Optional)
                     # =================================================
-                    st.markdown("---")
-                    st.subheader("📈 Create Marketing Funnel QR")
-                    
-                    st.info("""
-                    **Turn this page into a conversion machine!**  
-                    Create a QR code that shows a video + your offer when scanned.
-                    """)
-                    
-                    # Extract available data
-                    page_title = ""
-                    page_description = ""
-                    og_image = ""
-                    detected_video = ""
-                    detected_price = ""
-                    
-                    if result.structured_data:
-                        page_title = result.structured_data.get('title', '')
-                    
-                    if result.metadata:
-                        page_description = result.metadata.get('og:description', '') or \
-                                          result.metadata.get('description', '')
-                        og_image = result.metadata.get('og:image', '')
-                        detected_video = extract_video_from_page(
-                            result.structured_data or {}, 
-                            result.metadata or {}
+                    if enable_funnel:
+                        st.markdown("---")
+                        st.subheader("📈 Create Marketing Funnel QR")
+                        
+                        st.info("""
+                        **Turn this page into a conversion machine!**  
+                        Create a QR code that shows a video + your offer when scanned.
+                        """)
+                        
+                        # Extract available data
+                        page_title = ""
+                        page_description = ""
+                        og_image = ""
+                        detected_video = ""
+                        detected_price = ""
+                        
+                        if result.structured_data:
+                            page_title = result.structured_data.get('title', '')
+                        
+                        if result.metadata:
+                            page_description = result.metadata.get('og:description', '') or \
+                                              result.metadata.get('description', '')
+                            og_image = result.metadata.get('og:image', '')
+                            detected_video = extract_video_from_page(
+                                result.structured_data or {}, 
+                                result.metadata or {}
+                            )
+                            detected_price = extract_price_from_page(
+                                result.structured_data or {},
+                                result.metadata or {}
+                            )
+                        
+                        # Show what we extracted - only if we found something useful
+                        has_useful_data = any([page_title, page_description, og_image, detected_video, detected_price])
+                        
+                        if has_useful_data:
+                            with st.expander("📊 Extracted Data for Funnel", expanded=False):
+                                if page_title:
+                                    st.write(f"**Page Title:** {page_title}")
+                                if page_description:
+                                    desc_preview = page_description[:200] + '...' if len(page_description) > 200 else page_description
+                                    st.write(f"**Description:** {desc_preview}")
+                                if og_image:
+                                    st.write(f"**OG Image:** Found ✅")
+                                if detected_video:
+                                    st.write(f"**Video Detected:** {detected_video}")
+                                if detected_price:
+                                    st.write(f"**Price Detected:** {detected_price}")
+                                
+                                if not any([page_title, page_description]):
+                                    st.warning("⚠️ No meaningful content extracted. You'll need to provide headline and offer text manually in QR-Greeting.")
+                        else:
+                            st.warning("⚠️ No structured metadata found on this page. You'll need to provide all content manually in QR-Greeting.")
+                        
+                        # Video URL input with session state to prevent disappearing bug
+                        if 'funnel_video_url' not in st.session_state:
+                            st.session_state.funnel_video_url = detected_video or ""
+                        
+                        funnel_col1, funnel_col2 = st.columns([3, 1])
+                        
+                        with funnel_col1:
+                            video_url_input = st.text_input(
+                                "🎬 Video URL (optional but recommended)",
+                                value=st.session_state.funnel_video_url,
+                                placeholder="https://youtube.com/watch?v=... or https://youtu.be/...",
+                                help="Add a video to make your funnel more engaging",
+                                key=f"video_url_input_{url}",  # Unique key per URL to avoid conflicts
+                                on_change=lambda: setattr(st.session_state, 'funnel_video_url', st.session_state[f"video_url_input_{url}"])
+                            )
+                        
+                        with funnel_col2:
+                            st.write("")  # Spacing
+                            st.write("")
+                            if video_url_input:
+                                # Quick validation
+                                if 'youtube' in video_url_input.lower() or 'youtu.be' in video_url_input.lower():
+                                    st.success("✅ YouTube")
+                                elif 'vimeo' in video_url_input.lower():
+                                    st.success("✅ Vimeo")
+                                elif video_url_input.endswith(('.mp4', '.webm')):
+                                    st.success("✅ Direct")
+                                else:
+                                    st.warning("⚠️ Unknown")
+                        
+                        # Build the funnel URL
+                        funnel_redirect_url = build_funnel_url(
+                            landing_url=url,  # The page they just scraped
+                            video_url=video_url_input,
+                            page_title=page_title,
+                            page_description=page_description,
+                            og_image=og_image,
+                            detected_price=detected_price
                         )
-                        detected_price = extract_price_from_page(
-                            result.structured_data or {},
-                            result.metadata or {}
-                        )
-                    
-                    # Show what we extracted
-                    with st.expander("📊 Extracted Data for Funnel", expanded=False):
-                        st.write(f"**Page Title:** {page_title or 'Not found'}")
-                        st.write(f"**Description:** {page_description[:100] + '...' if len(page_description) > 100 else page_description or 'Not found'}")
-                        st.write(f"**OG Image:** {'Found ✅' if og_image else 'Not found'}")
-                        st.write(f"**Video Detected:** {detected_video or 'None (you can add manually)'}")
-                        st.write(f"**Price Detected:** {detected_price or 'None'}")
-                    
-                    # Video URL input (user can override or add)
-                    funnel_col1, funnel_col2 = st.columns([3, 1])
-                    
-                    with funnel_col1:
-                        video_url_input = st.text_input(
-                            "🎬 Video URL (optional but recommended)",
-                            value=detected_video,
-                            placeholder="https://youtube.com/watch?v=... or https://youtu.be/...",
-                            help="Add a video to make your funnel more engaging",
-                            key="video_url_input"
-                        )
-                    
-                    with funnel_col2:
-                        st.write("")  # Spacing
-                        st.write("")
-                        if video_url_input:
-                            # Quick validation
-                            if 'youtube' in video_url_input.lower() or 'youtu.be' in video_url_input.lower():
-                                st.success("✅ YouTube")
-                            elif 'vimeo' in video_url_input.lower():
-                                st.success("✅ Vimeo")
-                            elif video_url_input.endswith(('.mp4', '.webm')):
-                                st.success("✅ Direct")
-                            else:
-                                st.warning("⚠️ Unknown")
-                    
-                    # Build the funnel URL
-                    funnel_redirect_url = build_funnel_url(
-                        landing_url=url,  # The page they just scraped
-                        video_url=video_url_input,
-                        page_title=page_title,
-                        page_description=page_description,
-                        og_image=og_image,
-                        detected_price=detected_price
-                    )
-                    
-                    # Action buttons
-                    btn_col1, btn_col2 = st.columns(2)
-                    
-                    with btn_col1:
-                        st.link_button(
-                            "📈 Create Marketing Funnel QR →",
-                            url=funnel_redirect_url,
-                            type="primary",
-                            use_container_width=True
-                        )
-                    
-                    with btn_col2:
-                        if st.button("📋 Copy Funnel Link", use_container_width=True, key="copy_funnel_link"):
-                            st.code(funnel_redirect_url, language=None)
-                    
-                    st.caption("💡 Opens QR-Greeting with your page data pre-filled. Add your offer details there.")
+                        
+                        # Action buttons
+                        btn_col1, btn_col2 = st.columns(2)
+                        
+                        with btn_col1:
+                            st.link_button(
+                                "📈 Create Marketing Funnel QR →",
+                                url=funnel_redirect_url,
+                                type="primary",
+                                use_container_width=True
+                            )
+                        
+                        with btn_col2:
+                            if st.button("📋 Copy Funnel Link", use_container_width=True, key="copy_funnel_link"):
+                                st.code(funnel_redirect_url, language=None)
+                        
+                        st.caption("💡 Opens QR-Greeting with your page data pre-filled. Add your offer details there.")
 
                     # =================================================
                     # QR-Greeting Integration Section
