@@ -643,26 +643,23 @@ if manual_extract or should_auto_extract:
                         else:
                             st.warning("⚠️ No structured metadata found on this page. You'll need to provide all content manually in QR-Greeting.")
                         
-                        # Video URL input with session state to prevent disappearing bug
-                        if 'funnel_video_url' not in st.session_state:
-                            st.session_state.funnel_video_url = detected_video or ""
-                        
+                        # Video URL input - simple approach without complex state management
                         funnel_col1, funnel_col2 = st.columns([3, 1])
                         
                         with funnel_col1:
                             video_url_input = st.text_input(
                                 "🎬 Video URL (optional but recommended)",
-                                value=st.session_state.funnel_video_url,
+                                value=detected_video or "",
                                 placeholder="https://youtube.com/watch?v=... or https://youtu.be/...",
                                 help="Add a video to make your funnel more engaging",
-                                key=f"video_url_input_{url}",  # Unique key per URL to avoid conflicts
-                                on_change=lambda: setattr(st.session_state, 'funnel_video_url', st.session_state[f"video_url_input_{url}"])
+                                key="funnel_video_url_input"  # Simple, fixed key
                             )
                         
                         with funnel_col2:
                             st.write("")  # Spacing
                             st.write("")
-                            if video_url_input:
+                            # Show validation ONLY if input is not empty
+                            if video_url_input and video_url_input.strip():
                                 # Quick validation
                                 if 'youtube' in video_url_input.lower() or 'youtu.be' in video_url_input.lower():
                                     st.success("✅ YouTube")
