@@ -124,6 +124,107 @@ def detect_theme_from_url(url: str) -> str:
 
 
 # =============================================================================
+# Marketing Funnel QR Functions
+# =============================================================================
+
+def build_funnel_url(
+    landing_url: str,
+    video_url: str = "",
+    page_title: str = "",
+    page_description: str = "",
+    og_image: str = "",
+    detected_price: str = ""
+) -> str:
+    """
+    Build URL to QR-Greeting's funnel tab with pre-filled data.
+    
+    Args:
+        landing_url: The page that was scraped (becomes CTA destination)
+        video_url: Video URL if detected or user-provided
+        page_title: Extracted page title (becomes headline suggestion)
+        page_description: Meta description (becomes offer text suggestion)
+        og_image: Open Graph image URL (for preview)
+        detected_price: Price if product page (for offer text)
+    
+    Returns:
+        Full URL to qr-greeting funnel tab
+    """
+    # Auto-generate headline from title
+    headline = ""
+    if page_title:
+        # Truncate and add emoji
+        headline = f"✨ {page_title[:50]}" if len(page_title) > 50 else f"✨ {page_title}"
+    
+    # Auto-generate offer text
+    offer_text = ""
+    if page_description:
+        offer_text = page_description[:200]
+    if detected_price:
+        offer_text = f"{offer_text}\n\n💰 {detected_price}" if offer_text else f"💰 {detected_price}"
+    
+    params = {
+        "tab": "funnel",
+        "landing_url": landing_url,
+        "source": "netpull"  # Track that this came from NetPull
+    }
+    
+    # Only add non-empty values
+    if video_url:
+        params["video_url"] = video_url
+    if headline:
+        params["headline"] = headline
+    if offer_text:
+        params["offer_text"] = offer_text
+    if og_image:
+        params["og_image"] = og_image
+    
+    base_url = "https://qr-greeting.streamlit.app/"
+    return f"{base_url}?{urllib.parse.urlencode(params)}"
+
+
+def extract_video_from_page(structured_data: dict, metadata: dict) -> str:
+    """
+    Try to find video URL from extracted page data.
+    
+    Checks:
+    1. OpenGraph video meta tag
+    2. YouTube embeds in page
+    3. Vimeo embeds in page
+    4. Direct video URLs in content
+    """
+    video_url = ""
+    
+    # Check metadata for og:video
+    if metadata:
+        video_url = metadata.get('og:video', '') or metadata.get('og:video:url', '')
+        if video_url:
+            return video_url
+    
+    # TODO: Check for YouTube/Vimeo embeds in structured_data
+    # (This would require NetPull to extract iframe src attributes)
+    
+    return video_url
+
+
+def extract_price_from_page(structured_data: dict, metadata: dict) -> str:
+    """
+    Try to find product price from extracted page data.
+    
+    Checks:
+    1. Schema.org price
+    2. og:price:amount
+    3. Common price patterns in content
+    """
+    if metadata:
+        price = metadata.get('og:price:amount', '') or metadata.get('product:price:amount', '')
+        currency = metadata.get('og:price:currency', '') or metadata.get('product:price:currency', 'USD')
+        if price:
+            return f"{currency} {price}"
+    
+    return ""
+
+
+# =============================================================================
 # QR-Greeting Keepalive Daemon
 # =============================================================================
 
@@ -441,6 +542,101 @@ if manual_extract or should_auto_extract:
                                 st.subheader("Metadata")
                                 st.json(result.metadata)
                             tab_index += 1
+
+                    # =================================================
+                    # Marketing Funnel QR Builder Section
+                    # =================================================
+                    st.markdown("---")
+                    st.subheader("📈 Create Marketing Funnel QR")
+                    
+                    st.info("""
+                    **Turn this page into a conversion machine!**  
+                    Create a QR code that shows a video + your offer when scanned.
+                    """)
+                    
+                    # Extract available data
+                    page_title = ""
+                    page_description = ""
+                    og_image = ""
+                    detected_video = ""
+                    detected_price = ""
+                    
+                    if result.structured_data:
+                        page_title = result.structured_data.get('title', '')
+                    
+                    if result.metadata:
+                        page_description = result.metadata.get('og:description', '') or \
+                                          result.metadata.get('description', '')
+                        og_image = result.metadata.get('og:image', '')
+                        detected_video = extract_video_from_page(
+                            result.structured_data or {}, 
+                            result.metadata or {}
+                        )
+                        detected_price = extract_price_from_page(
+                            result.structured_data or {},
+                            result.metadata or {}
+                        )
+                    
+                    # Show what we extracted
+                    with st.expander("📊 Extracted Data for Funnel", expanded=False):
+                        st.write(f"**Page Title:** {page_title or 'Not found'}")
+                        st.write(f"**Description:** {page_description[:100] + '...' if len(page_description) > 100 else page_description or 'Not found'}")
+                        st.write(f"**OG Image:** {'Found ✅' if og_image else 'Not found'}")
+                        st.write(f"**Video Detected:** {detected_video or 'None (you can add manually)'}")
+                        st.write(f"**Price Detected:** {detected_price or 'None'}")
+                    
+                    # Video URL input (user can override or add)
+                    funnel_col1, funnel_col2 = st.columns([3, 1])
+                    
+                    with funnel_col1:
+                        video_url_input = st.text_input(
+                            "🎬 Video URL (optional but recommended)",
+                            value=detected_video,
+                            placeholder="https://youtube.com/watch?v=... or https://youtu.be/...",
+                            help="Add a video to make your funnel more engaging",
+                            key="video_url_input"
+                        )
+                    
+                    with funnel_col2:
+                        st.write("")  # Spacing
+                        st.write("")
+                        if video_url_input:
+                            # Quick validation
+                            if 'youtube' in video_url_input.lower() or 'youtu.be' in video_url_input.lower():
+                                st.success("✅ YouTube")
+                            elif 'vimeo' in video_url_input.lower():
+                                st.success("✅ Vimeo")
+                            elif video_url_input.endswith(('.mp4', '.webm')):
+                                st.success("✅ Direct")
+                            else:
+                                st.warning("⚠️ Unknown")
+                    
+                    # Build the funnel URL
+                    funnel_redirect_url = build_funnel_url(
+                        landing_url=url,  # The page they just scraped
+                        video_url=video_url_input,
+                        page_title=page_title,
+                        page_description=page_description,
+                        og_image=og_image,
+                        detected_price=detected_price
+                    )
+                    
+                    # Action buttons
+                    btn_col1, btn_col2 = st.columns(2)
+                    
+                    with btn_col1:
+                        st.link_button(
+                            "📈 Create Marketing Funnel QR →",
+                            url=funnel_redirect_url,
+                            type="primary",
+                            use_container_width=True
+                        )
+                    
+                    with btn_col2:
+                        if st.button("📋 Copy Funnel Link", use_container_width=True, key="copy_funnel_link"):
+                            st.code(funnel_redirect_url, language=None)
+                    
+                    st.caption("💡 Opens QR-Greeting with your page data pre-filled. Add your offer details there.")
 
                     # =================================================
                     # QR-Greeting Integration Section
